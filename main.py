@@ -1,4 +1,3 @@
-# Assuming you have the following files and functions
 from db_connection import connect_to_database, close_connection
 from queries import get_or_create_player, start_new_game
 from game_logic import choose_destination_and_travel, refuel_action, interact_with_npcs_and_clues, travel_to_new_airport

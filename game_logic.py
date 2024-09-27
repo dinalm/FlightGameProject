@@ -98,7 +98,7 @@ def travel_to_new_airport(connection, player_id, current_airport_id, destination
     cursor.execute("SELECT latitude_deg, longitude_deg FROM airport WHERE id = %s", (current_airport_id,))
     current_airport = cursor.fetchone()
 
-    cursor.execute("SELECT latitude_deg, longitude_deg FROM airport WHERE id = %s", (destination_airport_id,))
+    cursor.execute("SELECT latitude_deg, longitude_deg FROM airport WHERE name = %s", (destination_airport_id,))
     destination_airport = cursor.fetchone()
 
     if current_airport and destination_airport:
@@ -118,7 +118,7 @@ def travel_to_new_airport(connection, player_id, current_airport_id, destination
         if current_fuel and current_fuel[0] >= required_fuel:
             # Deduct fuel and update player's location
             new_fuel_level = current_fuel[0] - required_fuel
-            cursor.execute("UPDATE player SET fuel_units = %s, current_airport_id = %s WHERE player_id = %s",
+            cursor.execute("UPDATE player SET fuel_units = %s, current_airport_id = (SELECT id from airport where name = %s) WHERE player_id = %s",
                            (new_fuel_level, destination_airport_id, player_id))
             connection.commit()
             print(f"Travel successful! New fuel level: {new_fuel_level:.2f} units.")
@@ -129,27 +129,6 @@ def travel_to_new_airport(connection, player_id, current_airport_id, destination
     else:
         print("Invalid airport ID.")
         return False
-
-
-def execute_move(connection, player_id, current_airport_id, destination_airport_id):
-    # Calculate required fuel for the next journey
-    required_fuel = calculate_fuel_requirement(current_airport_id, destination_airport_id, connection)
-
-    # Check current fuel level
-    current_fuel = get_player_fuel(connection, player_id)
-
-    if current_fuel >= required_fuel:
-        # Update player location and fuel
-        update_player_location(connection, player_id, destination_airport_id)
-        update_player_fuel(connection, player_id, current_fuel - required_fuel)
-
-        print(
-            f"Travelled successfully to {get_airport_name(connection, destination_airport_id)}. Remaining fuel: {current_fuel - required_fuel}.")
-        return True
-    else:
-        print("Insufficient fuel for this journey.")
-        return False
-
 
 def present_information_and_decide(connection, current_airport_id, visited_airports, correct_airport_id):
     print("You've arrived at the airport. Gathering clues and meeting people.")
