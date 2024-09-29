@@ -124,18 +124,25 @@ def fetch_airport_coordinates(connection, airport_id):
         return None, None  # No data found
 
 
-def update_player_location(connection, player_id, new_location_id):
+def update_player_location(connection, player_id, new_airport_id):
     cursor = connection.cursor()
-    cursor.execute("SELECT latitude_deg, longitude_deg FROM airport WHERE id = %s", (new_location_id,))
+
+    # Fetch latitude and longitude for the new airport
+    cursor.execute("SELECT latitude_deg, longitude_deg FROM airport WHERE id = %s", (new_airport_id,))
     result = cursor.fetchone()
+
     if result:
         new_latitude, new_longitude = result
-        update_query = "UPDATE player SET current_airport_id = %s, current_latitude = %s, current_longitude = %s WHERE player_id = %s"
-        cursor.execute(update_query, (new_location_id, new_latitude, new_longitude, player_id))
+
+        # Update player's current location (airport ID and coordinates)
+        update_query = " UPDATE player SET current_airport_id = %s, current_latitude = %s, current_longitude = %s WHERE player_id = %s"
+        cursor.execute(update_query, (new_airport_id, new_latitude, new_longitude, player_id))
         connection.commit()
-        print("Player location updated successfully.")
+
+        print(f"Player location updated successfully to airport ID {new_airport_id}, Latitude: {new_latitude}, Longitude: {new_longitude}.")
     else:
-        print("Failed to update player location. No such airport found.")
+        print("No such airport found. Unable to update player location.")
+
 
 
 def list_all_airports_except_current(connection, current_airport_id):
@@ -273,5 +280,34 @@ def retrieve_or_register_player(connection, screen_name):
         print(f"No profile found for {screen_name}. Creating a new profile...")
         return create_new_player(connection)
 
+
+def show_player_status(connection, player_id):
+    cursor = connection.cursor()
+
+    # Fetch player details: screen_name, current_airport_id, fuel_units, refuel_attempts
+    cursor.execute("""SELECT player.screen_name, player.fuel_units, player.refuel_attempts, airport.name, country.name FROM player 
+                   JOIN airport ON player.current_airport_id = airport.id JOIN country ON airport.iso_country = country.iso_country 
+                   WHERE player.player_id = %s""", (player_id,))
+
+    result = cursor.fetchone()
+
+    if result:
+        screen_name = result[0]
+        fuel_units = result[1]
+        refuel_attempts = result[2]
+        airport_name = result[3]
+        country_name = result[4]
+
+        # Calculate remaining refuel attempts (maximum 5)
+        remaining_attempts = 5 - refuel_attempts
+
+        print("\n--- Player Status ---")
+        print(f"Screen Name: {screen_name}")
+        print(f"Current Location: {airport_name}, {country_name}")
+        print(f"Fuel Units: {fuel_units}")
+        print(f"Remaining Refuel Attempts: {remaining_attempts}/5")
+        print("---------------------\n")
+    else:
+        print("Player not found.")
 
 

@@ -1,25 +1,37 @@
 from queries import (get_fuel_info_at_airport, get_player_fuel, update_player_fuel, calculate_fuel_requirement, get_airport_name,
-                     update_player_location, get_clues_by_airport, get_npcs_by_airport, list_all_airports_except_current, start_new_game)
+                     update_player_location, get_clues_by_airport, get_npcs_by_airport, list_all_airports_except_current, start_new_game, show_player_status)
 from decimal import Decimal
 
 # Game logic for player refueling
 def refuel_player(connection, player_id, fuel_to_add):
     cursor = connection.cursor()
     try:
-        # Fetch the current fuel level
-        cursor.execute("SELECT fuel_units FROM player WHERE player_id = %s", (player_id,))
+        # Check how many times the player has refueled
+        cursor.execute("SELECT fuel_units, refuel_attempts FROM player WHERE player_id = %s", (player_id,))
         result = cursor.fetchone()
         if result:
             current_fuel = result[0]
+            refuel_attempts = result[1]
+
+            # Check if the player has refueled more than 5 times
+            if refuel_attempts >= 5:
+                print("You have already refueled 5 times. You cannot refuel anymore.")
+                return False
+
             new_fuel_amount = current_fuel + fuel_to_add
-            if new_fuel_amount > 2147483647:
+            if new_fuel_amount > 2147483647:  # Assuming INT type for fuel_units
                 print("Fuel amount exceeds the maximum allowed value. Cannot refuel this much.")
                 return False
 
-            # Update the fuel level
-            cursor.execute("UPDATE player SET fuel_units = %s WHERE player_id = %s", (new_fuel_amount, player_id))
+            # Increment the refuel attempts
+            refuel_attempts += 1
+
+            # Update fuel amount and refuel attempts
+            cursor.execute("UPDATE player SET fuel_units = %s, refuel_attempts = %s WHERE player_id = %s",
+                           (new_fuel_amount, refuel_attempts, player_id))
             connection.commit()
-            print(f"Refueled successfully! New fuel amount: {new_fuel_amount} units.")
+            print(
+                f"Refueled successfully! New fuel amount: {new_fuel_amount} units. Refuel attempts: {refuel_attempts}/5.")
             return True
         else:
             print("Player not found.")
@@ -66,13 +78,13 @@ def refuel_action(connection, player_id):
         if confirm.lower() == 'yes':
             if refuel_player(connection, player_id, fuel_units_to_buy):
                 print("Refueling successful!")
+                show_player_status(connection, player_id)  # Show updated status after refuel
             else:
                 print("Refueling failed.")
         else:
             print("Refuel cancelled.")
     except ValueError:
         print("Invalid input. Please enter a valid number.")
-
 
 
 # using geopy to calculating the distance
@@ -97,29 +109,30 @@ def travel_to_new_airport(connection, player_id, current_airport_id, destination
 
     if current_airport and destination_airport:
         # Calculate distance between airports
-        distance = calculate_distance(current_airport[0], current_airport[1], destination_airport[0], destination_airport[1])
-        print(f"Distance between airports: {distance:.2f} Km")  # Debug print
+        distance = geodesic((current_airport[0], current_airport[1]), (destination_airport[0], destination_airport[1])).kilometers
+        print(f"Distance between airports: {distance:.2f} Km")
 
         # Calculate fuel required
-        fuel_consumption_rate_per_km = 0.5
-        fuel_required = distance * fuel_consumption_rate_per_km
-        print(f"Required fuel: {fuel_required:.2f} units.")  # Debug print
+        fuel_consumption_rate = 0.5  # Example rate: 0.5 fuel units per km
+        required_fuel = distance * fuel_consumption_rate
+        print(f"Required fuel: {required_fuel:.2f} units.")
 
         # Get player's current fuel level
         cursor.execute("SELECT fuel_units FROM player WHERE player_id = %s", (player_id,))
         current_fuel = cursor.fetchone()
 
-        if current_fuel and current_fuel[0] >= fuel_required:
+        if current_fuel and current_fuel[0] >= required_fuel:
             # Deduct fuel and update player's location
-            new_fuel_level = current_fuel[0] - Decimal(fuel_required)
+            new_fuel_level = current_fuel[0] - required_fuel
             cursor.execute("UPDATE player SET fuel_units = %s WHERE player_id = %s", (new_fuel_level, player_id))
             connection.commit()
+            print(f"Travel successful! New fuel level: {new_fuel_level:.2f} units.")
             return True
         else:
-            print(f"Not enough fuel. You need {fuel_required:.2f} units but only have {current_fuel[0]} units.")
+            print(f"Not enough fuel. You need {required_fuel:.2f} units but only have {current_fuel[0]:.2f} units.")
             return False
     else:
-        print("Invalid airport ID.")  # Ensure this logic is valid
+        print("Invalid airport ID.")
         return False
 
 
@@ -204,14 +217,17 @@ def choose_destination_and_travel(connection, player_id):
             print(f"Selected Airport ID: {destination_airport_id}")  # Debug print
             # Call travel_to_new_airport to process travel
             if travel_to_new_airport(connection, player_id, current_airport_id, destination_airport_id):
-                # Successfully traveled, now update player location details
+                print("Travel successful!")
+                # Update player location after successful travel
                 update_player_location(connection, player_id, destination_airport_id)
+                show_player_status(connection, player_id)  # Show updated status after travel
             else:
                 print("Travel failed due to insufficient fuel. Please refuel before attempting to travel.")
         else:
             print("Invalid choice, please try again.")
     else:
         print("No available destinations.")
+
 
 
 def interact_with_npcs_and_clues(connection, player_id):
