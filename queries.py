@@ -125,44 +125,31 @@ def fetch_airport_coordinates(connection, airport_id):
 
 
 def update_player_location(connection, player_id, new_location_id):
-    try:
-        cursor = connection.cursor()
-
-        # Fetch latitude and longitude for the new airport
-        sql_query = "SELECT latitude_deg, longitude_deg FROM airport WHERE id = %s"
-        cursor.execute(sql_query, (new_location_id,))
-        result = cursor.fetchone()
-        if result:
-            new_latitude, new_longitude = result
-
-            # Update the player's location and coordinates
-            update_query = "UPDATE player SET current_airport_id = %s, current_latitude = %s, current_longitude = %s WHERE player_id = %s"
-            cursor.execute(update_query, (new_location_id, new_latitude, new_longitude, player_id))
-            connection.commit()
-            print("Player location and coordinates updated successfully.")
-        else:
-            print("No such airport found.")
-    except Exception as e:
-        print(f"Error updating player location and coordinates: {e}")
+    cursor = connection.cursor()
+    cursor.execute("SELECT latitude_deg, longitude_deg FROM airport WHERE id = %s", (new_location_id,))
+    result = cursor.fetchone()
+    if result:
+        new_latitude, new_longitude = result
+        update_query = "UPDATE player SET current_airport_id = %s, current_latitude = %s, current_longitude = %s WHERE player_id = %s"
+        cursor.execute(update_query, (new_location_id, new_latitude, new_longitude, player_id))
+        connection.commit()
+        print("Player location updated successfully.")
+    else:
+        print("Failed to update player location. No such airport found.")
 
 
 def list_all_airports_except_current(connection, current_airport_id):
     try:
-        # Fetch all airports excluding the current one
         cursor = connection.cursor()
-        sql_query = "SELECT airport.name, country.name, country.iso_country FROM airport JOIN country ON airport.iso_country = country.iso_country WHERE airport.id != %s ORDER BY country.name, airport.name"
-        cursor.execute(sql_query, (current_airport_id,))  # Pass current airport id to the query
+        # Specifying each column with its table name to avoid ambiguity
+        sql_query = "SELECT airport.id, airport.name, country.name FROM airport JOIN country ON airport.iso_country = country.iso_country WHERE airport.id != %s ORDER BY country.name, airport.name"
+        cursor.execute(sql_query, (current_airport_id,))
         airports = cursor.fetchall()
-
-        if not airports:
-            print("No other airports available.")
-            return []
-
-        return airports  # Just return the list of airports
-
+        return airports
     except Exception as e:
         print(f"Error fetching airports: {e}")
         return []
+
 
 def start_new_game(connection, player_id):
     try:

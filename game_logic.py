@@ -3,82 +3,76 @@ from queries import (get_fuel_info_at_airport, get_player_fuel, update_player_fu
 from decimal import Decimal
 
 # Game logic for player refueling
-def refuel_player(connection, player_id, airport_id, fuel_units_to_buy):
-    airport_name, fuel_price = get_fuel_info_at_airport(connection, airport_id)
-    if fuel_price == Decimal('0.0'):
-        print(f"No fuel available at {airport_name if airport_name else 'airport with ID ' + str(airport_id)}.")
+def refuel_player(connection, player_id, fuel_to_add):
+    cursor = connection.cursor()
+    try:
+        # Fetch the current fuel level
+        cursor.execute("SELECT fuel_units FROM player WHERE player_id = %s", (player_id,))
+        result = cursor.fetchone()
+        if result:
+            current_fuel = result[0]
+            new_fuel_amount = current_fuel + fuel_to_add
+            if new_fuel_amount > 2147483647:
+                print("Fuel amount exceeds the maximum allowed value. Cannot refuel this much.")
+                return False
+
+            # Update the fuel level
+            cursor.execute("UPDATE player SET fuel_units = %s WHERE player_id = %s", (new_fuel_amount, player_id))
+            connection.commit()
+            print(f"Refueled successfully! New fuel amount: {new_fuel_amount} units.")
+            return True
+        else:
+            print("Player not found.")
+            return False
+    except Exception as e:
+        print(f"Failed to refuel: {e}")
         return False
-
-    # Convert fuel_units_to_buy to Decimal for precision in calculations
-    fuel_units_to_buy = Decimal(fuel_units_to_buy)
-    total_cost = fuel_units_to_buy * fuel_price
-    print(f"Fuel price at {airport_name}: {fuel_price:.2f} per unit.")
-    print(f"Total cost to refuel: {total_cost:.2f} for {fuel_units_to_buy} units of fuel.")
-
-    current_fuel = get_player_fuel(connection, player_id)
-    if current_fuel is not None:
-        new_fuel_amount = current_fuel + fuel_units_to_buy
-        update_player_fuel(connection, player_id, new_fuel_amount)
-        print(f"Refueled {fuel_units_to_buy} units at {airport_name}. New fuel amount: {new_fuel_amount:.2f} units.")
-        return True
-    else:
-        print("Failed to retrieve current fuel amount. Refueling is not possible.")
-    return False
 
 
 def refuel_action(connection, player_id):
     cursor = connection.cursor()
 
-    # Retrieve player's current airport ID
+    # Retrieve the player's current airport ID
     cursor.execute("SELECT current_airport_id FROM player WHERE player_id = %s", (player_id,))
     result = cursor.fetchone()
-    if result:
-        current_airport_id = result[0]
-    else:
+    if not result:
         print("Player or current location not found.")
         return
 
-    # Check if fuel is available at the current airport and get the fuel price
-    cursor.execute("SELECT fuel_price, name, fuel_availability FROM airport WHERE id = %s", (current_airport_id,))
-    airport_data = cursor.fetchone()
-    if airport_data:
-        fuel_price, airport_name, fuel_availability = airport_data
-        if fuel_availability == 0 or fuel_price == Decimal('0.0'):
-            print(f"No fuel available at {airport_name}.")
-            return
-        # Convert Decimal to float for arithmetic operation
-        fuel_price = float(fuel_price)
-    else:
-        print("Airport not found.")
+    current_airport_id = result[0]
+
+    # Fetch the fuel price at the current airport
+    cursor.execute("SELECT fuel_price FROM airport WHERE id = %s", (current_airport_id,))
+    fuel_data = cursor.fetchone()
+    if not fuel_data or fuel_data[0] is None:
+        print("Fuel is not available at this airport.")
         return
 
-    print(f"Fuel price at {airport_name}: {fuel_price:.2f} per unit.")
+    fuel_price = fuel_data[0]
+    print(f"Fuel price at current airport: {fuel_price:.2f} per unit.")
 
     try:
-        # Prompt player to input how much fuel they want to buy
-        fuel_units_to_buy = float(input("Enter the number of fuel units you want to buy: "))
+        # Ask the player for the amount of fuel they wish to buy
+        fuel_units_to_buy = int(input("Enter the number of fuel units you want to buy: "))
         if fuel_units_to_buy <= 0:
-            print("Invalid input. You must enter a positive number.")
+            print("Invalid input. Number of fuel units must be positive.")
             return
 
-        # Calculate the total cost of fuel
         total_cost = fuel_units_to_buy * fuel_price
         print(f"Total cost to refuel: {total_cost:.2f} for {fuel_units_to_buy} units of fuel.")
 
-        # Confirm the purchase
-        confirm = input(f"Do you want to buy {fuel_units_to_buy:.2f} units of fuel for {total_cost:.2f}? (yes/no): ")
-        if confirm.lower() != 'yes':
-            print("Refuel cancelled.")
-            return
-
-        # Call the refuel_player function with the amount of fuel to buy
-        if refuel_player(connection, player_id, current_airport_id, fuel_units_to_buy):
-            print("Refueling successful!")
+        # Confirm the transaction
+        confirm = input(f"Do you want to buy {fuel_units_to_buy} units of fuel for {total_cost:.2f}? (yes/no): ")
+        if confirm.lower() == 'yes':
+            if refuel_player(connection, player_id, fuel_units_to_buy):
+                print("Refueling successful!")
+            else:
+                print("Refueling failed.")
         else:
-            print("Refueling failed.")
-
+            print("Refuel cancelled.")
     except ValueError:
-        print("Invalid input. Please enter a valid number for fuel units.")
+        print("Invalid input. Please enter a valid number.")
+
 
 
 # using geopy to calculating the distance
@@ -98,37 +92,36 @@ def travel_to_new_airport(connection, player_id, current_airport_id, destination
     cursor.execute("SELECT latitude_deg, longitude_deg FROM airport WHERE id = %s", (current_airport_id,))
     current_airport = cursor.fetchone()
 
-    cursor.execute("SELECT latitude_deg, longitude_deg FROM airport WHERE name = %s", (destination_airport_id,))
+    cursor.execute("SELECT latitude_deg, longitude_deg FROM airport WHERE id = %s", (destination_airport_id,))
     destination_airport = cursor.fetchone()
 
     if current_airport and destination_airport:
         # Calculate distance between airports
-        distance = geodesic((current_airport[0], current_airport[1]), (destination_airport[0], destination_airport[1])).kilometers
-        print(f"Distance between airports: {distance:.2f} Km")
+        distance = calculate_distance(current_airport[0], current_airport[1], destination_airport[0], destination_airport[1])
+        print(f"Distance between airports: {distance:.2f} Km")  # Debug print
 
         # Calculate fuel required
-        fuel_consumption_rate = 0.5  # Example rate: 0.5 fuel units per km
-        required_fuel = distance * fuel_consumption_rate
-        print(f"Required fuel: {required_fuel:.2f} units.")
+        fuel_consumption_rate_per_km = 0.5
+        fuel_required = distance * fuel_consumption_rate_per_km
+        print(f"Required fuel: {fuel_required:.2f} units.")  # Debug print
 
         # Get player's current fuel level
         cursor.execute("SELECT fuel_units FROM player WHERE player_id = %s", (player_id,))
         current_fuel = cursor.fetchone()
 
-        if current_fuel and current_fuel[0] >= required_fuel:
+        if current_fuel and current_fuel[0] >= fuel_required:
             # Deduct fuel and update player's location
-            new_fuel_level = current_fuel[0] - required_fuel
-            cursor.execute("UPDATE player SET fuel_units = %s, current_airport_id = (SELECT id from airport where name = %s) WHERE player_id = %s",
-                           (new_fuel_level, destination_airport_id, player_id))
+            new_fuel_level = current_fuel[0] - Decimal(fuel_required)
+            cursor.execute("UPDATE player SET fuel_units = %s WHERE player_id = %s", (new_fuel_level, player_id))
             connection.commit()
-            print(f"Travel successful! New fuel level: {new_fuel_level:.2f} units.")
             return True
         else:
-            print(f"Not enough fuel. You need {required_fuel:.2f} units but only have {current_fuel[0]:.2f} units.")
+            print(f"Not enough fuel. You need {fuel_required:.2f} units but only have {current_fuel[0]} units.")
             return False
     else:
-        print("Invalid airport ID.")
+        print("Invalid airport ID.")  # Ensure this logic is valid
         return False
+
 
 def present_information_and_decide(connection, current_airport_id, visited_airports, correct_airport_id):
     print("You've arrived at the airport. Gathering clues and meeting people.")
@@ -202,15 +195,18 @@ def choose_destination_and_travel(connection, player_id):
     if airports:
         print("Available Airports:")
         for index, airport in enumerate(airports, start=1):
-            # airport[0] is the airport name, airport[1] is the country name
-            print(f"{index}. {airport[0]} ({airport[1]})")
+            print(f"{index}. {airport[1]} ({airport[2]})")  # Adjusting to the correct tuple indices
 
         # Ask player to select a destination
         choice = input("Select the airport number to travel to: ")
         if choice.isdigit() and 1 <= int(choice) <= len(airports):
             destination_airport_id = airports[int(choice) - 1][0]
+            print(f"Selected Airport ID: {destination_airport_id}")  # Debug print
             # Call travel_to_new_airport to process travel
-            if not travel_to_new_airport(connection, player_id, current_airport_id, destination_airport_id):
+            if travel_to_new_airport(connection, player_id, current_airport_id, destination_airport_id):
+                # Successfully traveled, now update player location details
+                update_player_location(connection, player_id, destination_airport_id)
+            else:
                 print("Travel failed due to insufficient fuel. Please refuel before attempting to travel.")
         else:
             print("Invalid choice, please try again.")
