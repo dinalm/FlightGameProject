@@ -139,7 +139,7 @@ def update_player_location(connection, player_id, new_airport_id):
         cursor.execute(update_query, (new_airport_id, new_latitude, new_longitude, player_id))
         connection.commit()
 
-        print(f"Player location updated successfully to airport ID {new_airport_id}, Latitude: {new_latitude}, Longitude: {new_longitude}.")
+        print(f"Player location updated successfully")
     else:
         print("No such airport found. Unable to update player location.")
 
