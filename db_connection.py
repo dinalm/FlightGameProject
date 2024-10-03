@@ -10,7 +10,6 @@ def connect_to_database():
             autocommit=True
         )
         if connection.is_connected():
-            # print("connection successful")
          return connection
     except mysql.connector.Error as err:
         print(f'error: {err}')
@@ -18,4 +17,3 @@ def connect_to_database():
 def close_connection(connection):
     if connection.is_connected():
         connection.close()
-        # print("connection closed")
